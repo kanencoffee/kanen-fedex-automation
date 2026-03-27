@@ -10,7 +10,7 @@ const STATUS_COLORS: Record<string, string> = {
   returned: "bg-gray-100 text-gray-700",
 };
 
-export const revalidate = 60; // ISR: refresh every 60s
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const [stats, billing] = await Promise.all([
