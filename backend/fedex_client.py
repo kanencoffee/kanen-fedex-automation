@@ -17,11 +17,15 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # ---------------------------------------------------------------------------
-# Token cache — one shared state per process (Railway single-dyno is fine)
+# Token cache — separate caches for ship/rate and track credentials
 # ---------------------------------------------------------------------------
 _token: str | None = None
 _token_expires_at: float = 0.0
 _token_lock = asyncio.Lock()
+
+_track_token: str | None = None
+_track_token_expires_at: float = 0.0
+_track_token_lock = asyncio.Lock()
 
 TOKEN_TTL = 55 * 60  # refresh 5 minutes before FedEx's 3600s expiry
 
@@ -50,6 +54,35 @@ async def _get_token(client: httpx.AsyncClient) -> str:
         return _token
 
 
+async def _get_track_token(client: httpx.AsyncClient) -> str:
+    """Get OAuth token using Track API credentials (Basic Integrated Visibility project)."""
+    global _track_token, _track_token_expires_at
+
+    # Fall back to ship/rate credentials if track creds not configured
+    if not settings.fedex_track_client_id:
+        return await _get_token(client)
+
+    async with _track_token_lock:
+        if _track_token and time.monotonic() < _track_token_expires_at:
+            return _track_token
+
+        resp = await client.post(
+            f"{settings.fedex_base_url}/oauth/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": settings.fedex_track_client_id,
+                "client_secret": settings.fedex_track_client_secret,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        _track_token = data["access_token"]
+        _track_token_expires_at = time.monotonic() + TOKEN_TTL
+        logger.info("FedEx Track OAuth token refreshed.")
+        return _track_token
+
+
 def _auth_headers(token: str) -> dict:
     return {
         "Authorization": f"Bearer {token}",
@@ -68,7 +101,7 @@ async def track_shipment(tracking_number: str) -> dict[str, Any]:
     Returns the raw FedEx tracking response for one tracking number.
     """
     async with httpx.AsyncClient(timeout=20) as client:
-        token = await _get_token(client)
+        token = await _get_track_token(client)
         resp = await client.post(
             f"{settings.fedex_base_url}/track/v1/trackingnumbers",
             headers=_auth_headers(token),
@@ -93,7 +126,7 @@ async def subscribe_tracking_webhook(tracking_number: str, callback_url: str) ->
     Ask FedEx to push updates to our webhook endpoint — real-time vs polling.
     """
     async with httpx.AsyncClient(timeout=20) as client:
-        token = await _get_token(client)
+        token = await _get_track_token(client)
         resp = await client.post(
             f"{settings.fedex_base_url}/track/v1/notifications",
             headers=_auth_headers(token),

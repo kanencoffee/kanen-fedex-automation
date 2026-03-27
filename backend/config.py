@@ -3,11 +3,15 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # FedEx REST API v1 credentials
+    # FedEx REST API v1 credentials (Ship/Rate/Other)
     fedex_client_id: str
     fedex_client_secret: str
     fedex_account_number: str
     fedex_base_url: str = "https://apis.fedex.com"
+
+    # FedEx Track API credentials (Basic Integrated Visibility — separate project)
+    fedex_track_client_id: str = ""
+    fedex_track_client_secret: str = ""
 
     # PostgreSQL (Railway provides this as DATABASE_URL)
     database_url: str
