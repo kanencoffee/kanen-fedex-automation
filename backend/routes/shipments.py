@@ -2,7 +2,7 @@
 Shipment CRUD + live tracking refresh.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -194,7 +194,8 @@ async def _apply_tracking_update(shipment: Shipment, raw: dict, db: AsyncSession
 
     if est_delivery_str:
         try:
-            shipment.estimated_delivery = datetime.fromisoformat(est_delivery_str.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(est_delivery_str.replace("Z", "+00:00"))
+            shipment.estimated_delivery = dt.astimezone(timezone.utc).replace(tzinfo=None)
         except ValueError:
             pass
 
@@ -219,6 +220,7 @@ async def _apply_tracking_update(shipment: Shipment, raw: dict, db: AsyncSession
 
         try:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
         except ValueError:
             continue
 
